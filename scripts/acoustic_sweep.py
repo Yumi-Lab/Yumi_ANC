@@ -505,7 +505,7 @@ def cmd_stop(_args):
         json.dump(state, f)
 
     print(f"\nConfig: {ZONES_CFG}")
-    print("FIRMWARE_RESTART to apply.")
+    print("Use Apply to Klipper on anc.html to activate.")
 
 
 def _normalize_wav(src, dst):
