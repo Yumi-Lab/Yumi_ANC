@@ -71,7 +71,8 @@ def cmd_start(args):
     setup_alsa_mixer()
 
     # Clean previous run
-    for f in [MARKERS_FILE, RAW_WAV, PID_FILE]:
+    live_file = os.path.join(WEB_DIR, "anc_live.json")
+    for f in [MARKERS_FILE, RAW_WAV, PID_FILE, live_file]:
         if os.path.exists(f):
             os.remove(f)
 

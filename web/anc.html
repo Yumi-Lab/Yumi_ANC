@@ -710,6 +710,9 @@ async function startCalibration() {
     btn.className = 'btn btn-danger';
     lastPointCount = 0;
     document.getElementById('btnStop').style.display = '';
+    // Clear all previous data — fresh start
+    data = {};
+    render();
     startLiveRefresh();
     startLiveSpectrum();
 
