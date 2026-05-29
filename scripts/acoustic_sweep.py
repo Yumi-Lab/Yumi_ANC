@@ -446,19 +446,22 @@ def cmd_stop(_args):
     # Analyze and generate zones per axis
     first_axis = True
     auto_thresholds = {}
+    detected_zones = {}
     for axis in ['x', 'y', 'z', 'd']:
         if by_axis[axis]:
             print(f"\n=== {axis.upper()} axis ===")
             zones, auto_th = _analyze_zones(by_axis[axis])
             auto_thresholds[axis] = round(auto_th, 1)
+            detected_zones[axis] = [z["peak_speed"] for z in zones]
             _write_zones_cfg(zones, axis=axis, first=first_axis)
             first_axis = False
 
-    # Save web JSON with 4 curves + spectrum + auto thresholds
+    # Save web JSON with 4 curves + spectrum + detected zones
     web_data = {
         "freq_max": min(2000, SAMPLE_RATE / 2),
         "bins": 64,
-        "auto_threshold": auto_thresholds
+        "auto_threshold": auto_thresholds,
+        "detected_zones": detected_zones
     }
     for axis in ['x', 'y', 'z', 'd']:
         if by_axis[axis]:
