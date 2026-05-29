@@ -91,7 +91,14 @@ def cmd_start(args):
     # Save normalized baseline FFT for spectral subtraction (live + stop analysis)
     bl_fft_norm = bl_fft / len(bl_samples)
     np.save(os.path.join(DATA_DIR, ".baseline_fft_norm.npy"), bl_fft_norm)
-    print(f"Baseline: {baseline_db:.1f} dB (fans filtered)")
+    print(f"Baseline: {baseline_db:.1f} dBA")
+
+    # Baseline quality check
+    # TODO: calibrate this threshold with real-world data
+    BASELINE_WARNING_DB = 110.0  # placeholder — too noisy if above this
+    if baseline_db > BASELINE_WARNING_DB:
+        print(f"WARNING: High ambient noise ({baseline_db:.1f} dBA > {BASELINE_WARNING_DB})")
+        print("  Results may be unreliable. Reduce noise or move to quieter area.")
 
     # Publish baseline spectrum to live viewer (machine idle reference)
     max_freq = min(2000, SAMPLE_RATE / 2)
@@ -575,18 +582,20 @@ def _compute_fft(samples, a_weight=True):
     return fft_vals, freqs
 
 
-def _analyze_zones(measurements, max_zones=None):
-    """Find resonance peaks with double threshold (DeepSeek v2 recommendation).
+def _analyze_zones(measurements, threshold_dba=21.0, max_zones=None):
+    """Find resonance zones using a fixed dBA threshold.
 
-    1. Find all peaks with prominence >= 3 dB
-    2. Filter: keep only peaks with prominence >= 3 dB AND SNR >= 6 dB
-       (SNR = peak dB vs median of 10 neighboring speeds)
-    3. Sort by loudness, keep top N
-    4. If fewer than 3 survive the filter, take top 3 anyway
+    Simple and universal: everything above +threshold_dba above baseline
+    is a resonance zone. dBA ensures the threshold matches human perception.
+
+    Safety limits:
+    - max_zones caps the number of zones (8 for XY, 3 for Z)
+    - If too many zones detected, warns about machine condition
 
     Args:
-        measurements: list of dicts with delta_db
-        max_zones: max peaks to keep. None = auto (8 for XY, 3 for Z)
+        measurements: list of dicts with delta_db (in dBA)
+        threshold_dba: dBA above baseline to flag as resonance (default 21)
+        max_zones: safety cap. None = auto (8 for XY, 3 for Z)
     """
     from scipy.signal import find_peaks
 
@@ -595,7 +604,7 @@ def _analyze_zones(measurements, max_zones=None):
 
     if len(deltas) < 3:
         print("  Not enough data points")
-        return [], 0
+        return [], threshold_dba
 
     # Smooth to reduce noise
     if len(deltas) > 5:
@@ -604,67 +613,52 @@ def _analyze_zones(measurements, max_zones=None):
     else:
         deltas_smooth = deltas
 
-    # Auto max_zones based on speed range (Z is narrow)
+    # Safety cap on max zones
     speed_range = speeds[-1] - speeds[0]
     if max_zones is None:
         max_zones = 3 if speed_range < 50 else 8
 
     print(f"  Range: {np.min(deltas_smooth):.1f} to {np.max(deltas_smooth):.1f} dBA")
-    print(f"  Max zones: {max_zones}")
+    print(f"  Threshold: +{threshold_dba} dBA")
 
-    # Find ALL peaks with minimum prominence
+    # Simple dBA threshold — everything above is a zone
+    # Find peaks above threshold with minimum prominence
     peaks, properties = find_peaks(
         deltas_smooth,
+        height=threshold_dba,
         prominence=3.0,
         distance=2
     )
 
     if len(peaks) == 0:
-        print("  No peaks detected. Clean!")
-        return [], 0
+        print(f"  No speeds above +{threshold_dba} dBA. Clean!")
+        return [], threshold_dba
 
-    # Build peak data with SNR (peak vs local neighbors)
+    # Build zone list
     peak_data = []
     for i, idx in enumerate(peaks):
-        # SNR: compare peak to median of 10 neighboring points
-        lo = max(0, idx - 5)
-        hi = min(len(deltas_smooth), idx + 6)
-        neighbors = np.concatenate([deltas_smooth[lo:idx], deltas_smooth[idx+1:hi]])
-        local_median = float(np.median(neighbors)) if len(neighbors) > 0 else 0
-        snr = float(deltas_smooth[idx]) - local_median
-
         peak_data.append({
-            "idx": idx,
             "speed": int(speeds[idx]),
-            "db": float(deltas_smooth[idx]),
-            "prominence": float(properties['prominences'][i]),
-            "snr": round(snr, 1)
+            "db": round(float(deltas_smooth[idx]), 1),
+            "prominence": round(float(properties['prominences'][i]), 1)
         })
 
-    # Double threshold: prominence >= 3 dB AND SNR >= 6 dB
-    filtered = [p for p in peak_data if p["prominence"] >= 3.0 and p["snr"] >= 6.0]
-    print(f"  Peaks found: {len(peak_data)}, after filter (prom>=3 + SNR>=6): {len(filtered)}")
+    # Sort by loudness
+    peak_data.sort(key=lambda p: -p["db"])
 
-    # If too few survive, take top 3 by loudness anyway
-    if len(filtered) < 3:
-        filtered = sorted(peak_data, key=lambda p: -p["db"])[:3]
-        print(f"  Filter too strict, fallback to top 3")
-
-    # Sort by loudness, keep top N
-    filtered.sort(key=lambda p: -p["db"])
-    top_peaks = filtered[:max_zones]
-
-    # Auto threshold = dB of the weakest kept peak
-    auto_threshold = top_peaks[-1]["db"] if top_peaks else 0
-    print(f"  Auto threshold: {auto_threshold:.1f} dB (weakest of top {len(top_peaks)})")
+    # Safety cap
+    if len(peak_data) > max_zones:
+        print(f"  WARNING: {len(peak_data)} zones detected (cap at {max_zones})")
+        print(f"  Machine may have structural issues or threshold is too low")
+        peak_data = peak_data[:max_zones]
 
     zones = []
-    for p in sorted(top_peaks, key=lambda p: p["speed"]):
-        zones.append({"peak_speed": p["speed"], "peak_db": round(p["db"], 1)})
-        print(f"  >>> {p['speed']} mm/s: {p['db']:+.1f} dB (prominence {p['prominence']:.1f})")
+    for p in sorted(peak_data, key=lambda p: p["speed"]):
+        zones.append({"peak_speed": p["speed"], "peak_db": p["db"]})
+        print(f"  >>> {p['speed']} mm/s: +{p['db']} dBA (prominence {p['prominence']})")
 
-    print(f"  {len(zones)} zone(s)")
-    return zones, auto_threshold
+    print(f"  {len(zones)} zone(s) above +{threshold_dba} dBA")
+    return zones, threshold_dba
 
 
 def _write_zones_cfg(zones, axis='x', first=True):

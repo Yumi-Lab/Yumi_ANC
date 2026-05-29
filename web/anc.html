@@ -96,8 +96,8 @@ canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
     <div class="controls card" style="margin-bottom:15px">
         <div class="control-group">
             <label>Threshold:</label>
-            <input type="range" id="sliderThreshold" min="3" max="30" step="0.5" value="6" oninput="updateControls()">
-            <span class="val" id="valThreshold">+6.0 dBA</span>
+            <input type="range" id="sliderThreshold" min="3" max="30" step="0.5" value="21" oninput="updateControls()">
+            <span class="val" id="valThreshold">+21.0 dBA</span>
         </div>
         <div class="control-group">
             <label>Margin XY:</label>
@@ -277,7 +277,7 @@ canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
 
 <script>
 let data = { x: [], y: [] };
-let threshold = 6;
+let threshold = 21;
 let margin = 5;
 let marginZ = 1;
 let chartType = 'line'; // 'line' or 'bars'
