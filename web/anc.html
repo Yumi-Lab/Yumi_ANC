@@ -347,15 +347,16 @@ function findZones(arr, axisKey) {
     const thresh = isDb ? threshold : med * threshold;
 
     let zones;
-    if (useAutoZones && data.detected_zones && data.detected_zones[axisKey]) {
-        // Use exact zones from the algorithm (top-N with prominence+SNR filter)
+    if (!isDb && useAutoZones && data.detected_zones && data.detected_zones[axisKey]) {
+        // Legacy energy mode only: exact zones from the top-N algorithm.
         const detectedSpeeds = data.detected_zones[axisKey];
         zones = arr.filter(d => detectedSpeeds.includes(d.speed)).map(d => {
             const v = d.db != null ? d.db : d.energy || 0;
-            return { speed: d.speed, value: v, ratio: isDb ? v.toFixed(1) + ' dBA' : (v / med).toFixed(1) + 'x' };
+            return { speed: d.speed, value: v, ratio: (v / med).toFixed(1) + 'x' };
         });
     } else {
-        // Manual mode: threshold slider
+        // dBA mode (and manual): everything above the threshold is forbidden.
+        // Same predicate as the red dots, so every red point gets a band + label.
         zones = arr.filter(d => {
             const v = d.db != null ? d.db : d.energy || 0;
             return v != null && v > thresh;
@@ -703,13 +704,63 @@ function stopLiveRefresh() {
     }
 }
 
-async function startCalibration() {
+// Reflect the calibrating state in the toolbar (used by both manual start
+// and auto-detect-on-load, so a refresh mid-sweep shows the right buttons).
+function setCalibratingUI(on) {
     const btn = document.getElementById('btnCalibrate');
-    btn.disabled = true;
-    btn.textContent = 'Calibrating...';
-    btn.className = 'btn btn-danger';
+    if (on) {
+        btn.disabled = true;
+        btn.textContent = 'Calibrating...';
+        btn.className = 'btn btn-danger';
+        document.getElementById('btnStop').style.display = '';
+    } else {
+        btn.disabled = false;
+        btn.textContent = 'Start Calibration';
+        btn.className = 'btn btn-primary';
+        document.getElementById('btnStop').style.display = 'none';
+    }
+}
+
+// Watch until the sweep finishes (data stops growing OR live feed goes stale),
+// then drop back to the idle UI. Safe to call from start or from auto-detect.
+let doneWatcher = null;
+function finishCalibration() {
+    if (doneWatcher) { clearInterval(doneWatcher); doneWatcher = null; }
+    stopLiveRefresh();
+    stopLiveSpectrum();
+    setCalibratingUI(false);
+}
+// The script writes anc_status.json {running:true/false}. That flag is the
+// source of truth — marks during a slow Z move can be 40-50s apart, so any
+// freshness/stall heuristic gives false 'done'. Fallback (no status file):
+// only finish after a long quiet window so slow moves aren't cut short.
+function watchCalibration() {
+    if (doneWatcher) clearInterval(doneWatcher);
+    let staleTicks = 0;
+    doneWatcher = setInterval(async () => {
+        let status = null;
+        try {
+            const r = await fetch('/anc_status.json?' + Date.now());
+            if (r.ok) status = await r.json();
+        } catch(e) {}
+        if (status && typeof status.running === 'boolean') {
+            staleTicks = 0;
+            if (!status.running) finishCalibration();
+            return;
+        }
+        // Fallback: no status file — generous stall window (~60s).
+        const currentCount = (data.x||[]).length + (data.y||[]).length + (data.z||[]).length;
+        if (currentCount === lastPointCount && currentCount > 0) {
+            if (++staleTicks > 30) finishCalibration();
+        } else {
+            staleTicks = 0;
+        }
+    }, 2000);
+}
+
+async function startCalibration() {
     lastPointCount = 0;
-    document.getElementById('btnStop').style.display = '';
+    setCalibratingUI(true);
     // Clear all previous data — fresh start
     data = {};
     render();
@@ -718,33 +769,12 @@ async function startCalibration() {
 
     try {
         await sendGcode('ACOUSTIC_SPEED_SWEEP');
-        // Poll until data stops growing
-        let stableCount = 0;
-        const checkDone = setInterval(() => {
-            const currentCount = (data.x||[]).length + (data.y||[]).length + (data.z||[]).length;
-            if (currentCount === lastPointCount && currentCount > 0) {
-                stableCount++;
-                if (stableCount > 5) { // 10s of no new data = done
-                    clearInterval(checkDone);
-                    stopLiveRefresh();
-                    stopLiveSpectrum();
-                    btn.disabled = false;
-                    btn.textContent = 'Start Calibration';
-                    btn.className = 'btn btn-primary';
-                    document.getElementById('btnStop').style.display = 'none';
-                }
-            } else {
-                stableCount = 0;
-            }
-        }, 2000);
+        watchCalibration();
     } catch(e) {
         setStatus('red', 'Error: ' + e.message);
         stopLiveRefresh();
         stopLiveSpectrum();
-        btn.disabled = false;
-        btn.textContent = 'Start Calibration';
-        btn.className = 'btn btn-primary';
-        document.getElementById('btnStop').style.display = 'none';
+        setCalibratingUI(false);
     }
 }
 
@@ -752,10 +782,8 @@ async function stopCalibration() {
     try {
         await sendGcode('ACOUSTIC_STOP');
         setStatus('orange', 'Stopping... analyzing partial data');
-        document.getElementById('btnStop').style.display = 'none';
-        document.getElementById('btnCalibrate').disabled = false;
-        document.getElementById('btnCalibrate').textContent = 'Start Calibration';
-        document.getElementById('btnCalibrate').className = 'btn btn-primary';
+        if (doneWatcher) { clearInterval(doneWatcher); doneWatcher = null; }
+        setCalibratingUI(false);
         // Wait a bit then reload data
         setTimeout(() => { stopLiveRefresh(); stopLiveSpectrum(); loadData(); }, 5000);
     } catch(e) {
@@ -1416,20 +1444,33 @@ function drawScope() {
     }).catch(() => { drawScopeStored(); });
 }
 
-// Auto-detect sweep in progress on page load
+// Auto-detect sweep in progress on page load — uses the explicit status flag,
+// falling back to anc_live freshness if the status file isn't there yet.
 async function autoDetectLive() {
+    let running = false;
     try {
-        const resp = await fetch('/anc_live.json?' + Date.now());
-        if (resp.ok) {
-            const specData = await resp.json();
-            // If data is recent (< 30s old), sweep is in progress
-            if (specData.t && (Date.now()/1000 - specData.t) < 30) {
-                startLiveSpectrum();
-                startLiveRefresh();
-                setStatus('orange', 'Sweep in progress — live monitoring active');
-            }
+        const r = await fetch('/anc_status.json?' + Date.now());
+        if (r.ok) {
+            const s = await r.json();
+            if (typeof s.running === 'boolean') running = s.running;
         }
     } catch(e) {}
+    if (!running) {
+        try {
+            const resp = await fetch('/anc_live.json?' + Date.now());
+            if (resp.ok) {
+                const specData = await resp.json();
+                if (specData.t && (Date.now()/1000 - specData.t) < 60) running = true;
+            }
+        } catch(e) {}
+    }
+    if (running) {
+        setCalibratingUI(true);
+        startLiveSpectrum();
+        startLiveRefresh();
+        watchCalibration();
+        setStatus('orange', 'Sweep in progress — live monitoring active');
+    }
 }
 
 window.addEventListener('resize', render);

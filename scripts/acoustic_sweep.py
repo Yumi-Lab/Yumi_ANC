@@ -44,10 +44,24 @@ RAW_CSV = os.path.join(DATA_DIR, "acoustic_profile.csv")
 ZONES_CFG = os.path.join(DATA_DIR, "resonance_zones.cfg")
 WEB_JSON = os.path.join(WEB_DIR, "acoustic_data.json")
 PID_FILE = os.path.join(DATA_DIR, ".acoustic_pid")
+STATUS_JSON = os.path.join(WEB_DIR, "anc_status.json")
 
 SAMPLE_RATE = 16000  # 16kHz — enough for 100-800Hz band, 2.7x less RAM than 44100
 BANDPASS_LOW = 100
 BANDPASS_HIGH = 800
+
+
+def _set_running(running):
+    """Single source of truth for the web UI: is a sweep in progress?
+
+    Marks during a slow Z move can be 40-50s apart, so freshness heuristics
+    on anc_live.json give false 'done'. This explicit flag is unambiguous.
+    """
+    try:
+        with open(STATUS_JSON, 'w') as f:
+            json.dump({"running": bool(running), "t": time.time()}, f)
+    except Exception:
+        pass
 
 
 def setup_alsa_mixer():
@@ -69,6 +83,7 @@ def cmd_start(args):
     speed_step = int(args[2])
 
     setup_alsa_mixer()
+    _set_running(True)
 
     # Clean previous run
     live_file = os.path.join(WEB_DIR, "anc_live.json")
@@ -330,6 +345,7 @@ def cmd_stop(_args):
                 markers.append(json.loads(line))
 
     if not markers:
+        _set_running(False)
         print("ERROR: No markers recorded!")
         sys.exit(1)
 
@@ -460,7 +476,8 @@ def cmd_stop(_args):
             zones, auto_th = _analyze_zones(by_axis[axis])
             auto_thresholds[axis] = round(auto_th, 1)
             detected_zones[axis] = [z["peak_speed"] for z in zones]
-            _write_zones_cfg(zones, axis=axis, first=first_axis)
+            grid = _grid_from_speeds([m["speed_mm_s"] for m in by_axis[axis]])
+            _write_zones_cfg(zones, axis=axis, first=first_axis, grid=grid)
             first_axis = False
 
     # Save web JSON with 4 curves + spectrum + detected zones
@@ -504,6 +521,7 @@ def cmd_stop(_args):
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f)
 
+    _set_running(False)
     print(f"\nConfig: {ZONES_CFG}")
     print("Use Apply to Klipper on anc.html to activate.")
 
@@ -583,86 +601,80 @@ def _compute_fft(samples, a_weight=True):
 
 
 def _analyze_zones(measurements, threshold_dba=10.0, max_zones=None):
-    """Find resonance zones using a fixed dBA threshold.
+    """Forbidden speeds = every swept speed whose level exceeds the threshold.
 
-    Simple and universal: everything above +threshold_dba above baseline
-    is a resonance zone. dBA ensures the threshold matches human perception.
+    No peak-finding, no smoothing, no cap: a cruise speed is a nuisance if it
+    is audibly above the comfort threshold, full stop. This matches exactly
+    what the web UI shows (red points) and the user's model. The Klipper
+    module merges adjacent forbidden speeds into bands via the margin.
 
-    Safety limits:
-    - max_zones caps the number of zones (8 for XY, 3 for Z)
-    - If too many zones detected, warns about machine condition
+    The old find_peaks(prominence, distance) + convolution smoothing was
+    unreliable: smoothing pulled quiet points above the line (e.g. a +7.5 dBA
+    point flagged because its loud neighbours averaged in) and prominence
+    missed both broad plateaus and twin peaks (10 & 11 mm/s).
 
     Args:
         measurements: list of dicts with delta_db (in dBA)
-        threshold_dba: dBA above baseline to flag as resonance (default 21)
-        max_zones: safety cap. None = auto (8 for XY, 3 for Z)
+        threshold_dba: dBA above baseline to flag as resonance
+        max_zones: unused (kept for signature compatibility)
     """
-    from scipy.signal import find_peaks
-
     speeds = np.array([m["speed_mm_s"] for m in measurements])
     deltas = np.array([m["delta_db"] for m in measurements])
 
-    if len(deltas) < 3:
+    if len(deltas) < 1:
         print("  Not enough data points")
         return [], threshold_dba
 
-    # Smooth to reduce noise
-    if len(deltas) > 5:
-        kernel = np.ones(3) / 3
-        deltas_smooth = np.convolve(deltas, kernel, mode='same')
-    else:
-        deltas_smooth = deltas
-
-    # Safety cap on max zones
-    speed_range = speeds[-1] - speeds[0]
-    if max_zones is None:
-        max_zones = 3 if speed_range < 50 else 8
-
-    print(f"  Range: {np.min(deltas_smooth):.1f} to {np.max(deltas_smooth):.1f} dBA")
+    print(f"  Range: {np.min(deltas):.1f} to {np.max(deltas):.1f} dBA")
     print(f"  Threshold: +{threshold_dba} dBA")
 
-    # Simple dBA threshold — everything above is a zone
-    # Find peaks above threshold with minimum prominence
-    peaks, properties = find_peaks(
-        deltas_smooth,
-        height=threshold_dba,
-        prominence=3.0,
-        distance=2
-    )
+    zones = []
+    order = np.argsort(speeds)
+    for idx in order:
+        if deltas[idx] > threshold_dba:
+            zones.append({"peak_speed": int(speeds[idx]),
+                          "peak_db": round(float(deltas[idx]), 1)})
+            print(f"  >>> {int(speeds[idx])} mm/s: +{deltas[idx]:.1f} dBA")
 
-    if len(peaks) == 0:
+    if not zones:
         print(f"  No speeds above +{threshold_dba} dBA. Clean!")
         return [], threshold_dba
 
-    # Build zone list
-    peak_data = []
-    for i, idx in enumerate(peaks):
-        peak_data.append({
-            "speed": int(speeds[idx]),
-            "db": round(float(deltas_smooth[idx]), 1),
-            "prominence": round(float(properties['prominences'][i]), 1)
-        })
-
-    # Sort by loudness
-    peak_data.sort(key=lambda p: -p["db"])
-
-    # Safety cap
-    if len(peak_data) > max_zones:
-        print(f"  WARNING: {len(peak_data)} zones detected (cap at {max_zones})")
-        print(f"  Machine may have structural issues or threshold is too low")
-        peak_data = peak_data[:max_zones]
-
-    zones = []
-    for p in sorted(peak_data, key=lambda p: p["speed"]):
-        zones.append({"peak_speed": p["speed"], "peak_db": p["db"]})
-        print(f"  >>> {p['speed']} mm/s: +{p['db']} dBA (prominence {p['prominence']})")
-
-    print(f"  {len(zones)} zone(s) above +{threshold_dba} dBA")
+    frac = len(zones) / len(deltas)
+    if frac > 0.5:
+        print(f"  WARNING: {len(zones)}/{len(deltas)} speeds above threshold "
+              f"({frac*100:.0f}%). Ambient noise too high or threshold too low "
+              f"— results may be unreliable.")
+    print(f"  {len(zones)} speed(s) above +{threshold_dba} dBA")
     return zones, threshold_dba
 
 
-def _write_zones_cfg(zones, axis='x', first=True):
-    """Write Klipper config for resonance avoidance."""
+def _grid_from_speeds(speeds):
+    """Derive the measurement grid (min_speed, step) from the swept speeds.
+
+    The speeds actually measured ARE the validated grid the module snaps onto,
+    so we read min + the most common consecutive step straight from the data —
+    no need to thread macro variables (z_step, y_step…) through the shell call.
+    """
+    s = sorted(set(int(x) for x in speeds))
+    if len(s) < 2:
+        return (s[0] if s else 1, 1)
+    diffs = [s[i + 1] - s[i] for i in range(len(s) - 1)]
+    counts = {}
+    for d in diffs:
+        counts[d] = counts.get(d, 0) + 1
+    step = max(counts, key=counts.get)
+    return (s[0], max(1, step))
+
+
+def _write_zones_cfg(zones, axis='x', first=True, grid=None):
+    """Write Klipper config for resonance avoidance.
+
+    Per axis we also write the measurement grid (grid_min_/grid_step_) so the
+    module snaps a clamped move onto a speed that was actually swept, not onto
+    the raw band edge. Without these the module falls back to hard-coded
+    defaults, which silently break if the sweep used a different step.
+    """
     mode = 'w' if first else 'a'
     with open(ZONES_CFG, mode) as f:
         if first:
@@ -672,13 +684,17 @@ def _write_zones_cfg(zones, axis='x', first=True):
             f.write("enabled: True\n")
             f.write("avoidance_margin: 5\n")
             f.write("avoidance_margin_z: 1\n")
-            f.write("#   threshold auto-calculated per axis (IQR outlier detection)\n")
+            f.write("#   forbidden = every swept speed above the dBA threshold\n")
 
         key = f"avoidance_zones_{axis}"
         if zones:
             f.write(f"{key}: {', '.join(str(z['peak_speed']) for z in zones)}\n")
         else:
             f.write(f"{key}:\n")
+        # Module only snaps X/Y/Z (no diagonal axis); skip grid for 'd'.
+        if grid and axis in ('x', 'y', 'z'):
+            f.write(f"grid_min_{axis}: {grid[0]}\n")
+            f.write(f"grid_step_{axis}: {grid[1]}\n")
 
 
 def cmd_clear(_args):
@@ -729,6 +745,16 @@ def cmd_save(args):
     margin_z = 1
     zones = {'x': '', 'y': '', 'z': '', 'd': ''}
 
+    # Preserve the measurement grid written by the last sweep — the web UI
+    # only sends margins + zones, so without this an Apply would drop the
+    # grid and the next restart would fall back to default snap behaviour.
+    grid_lines = []
+    if os.path.exists(ZONES_CFG):
+        with open(ZONES_CFG, 'r') as f:
+            for line in f:
+                if line.strip().startswith(('grid_min_', 'grid_step_')):
+                    grid_lines.append(line.rstrip('\n'))
+
     # First part: margin_xy margin_z zones_x
     first = parts[0].strip().split()
     if len(first) >= 1:
@@ -758,6 +784,8 @@ def cmd_save(args):
         f.write(f"avoidance_margin_z: {margin_z}\n")
         for axis in ['x', 'y', 'z', 'd']:
             f.write(f"avoidance_zones_{axis}: {zones[axis]}\n")
+        for line in grid_lines:
+            f.write(line + "\n")
 
     print(f"Config saved to {ZONES_CFG}")
     print(f"  Margin XY=±{margin_xy} Z=±{margin_z}")

@@ -43,14 +43,13 @@ mkdir -p "${SCRIPTS_DIR}"
 ln -sf "${SCRIPT_DIR}/scripts/acoustic_sweep.py" "${SCRIPTS_DIR}/acoustic_sweep.py"
 echo "  Sweep script linked"
 
-# Macro config (don't overwrite user customizations on update)
-if [ ! -f "${CONFIG_DIR}/smartpad-anc.cfg" ]; then
-    cp "${SCRIPT_DIR}/config/smartpad-anc.cfg" "${CONFIG_DIR}/smartpad-anc.cfg"
-    [ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${CONFIG_DIR}/smartpad-anc.cfg" 2>/dev/null
-    echo "  Config installed (new)"
-else
-    echo "  Config exists (not overwritten)"
-fi
+# Macro config — symlink (like the .py/.html) so repo updates always
+# propagate. The macro is project-managed (reads printer settings live), not
+# user-edited, so there is nothing local to preserve. A previous cp + "only if
+# missing" left the active file stale: repo edits (e.g. the XY-diagonal
+# section) never reached the file Klipper actually reads.
+ln -sf "${SCRIPT_DIR}/config/smartpad-anc.cfg" "${CONFIG_DIR}/smartpad-anc.cfg"
+echo "  Config linked"
 
 # Web viewer (symlink)
 if [ -d "${MAINSAIL_DIR}" ]; then
