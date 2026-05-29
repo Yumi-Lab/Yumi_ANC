@@ -32,19 +32,16 @@ SCRIPTS_DIR="${USER_HOME}/printer_data/scripts"
 KLIPPER_EXTRAS="${USER_HOME}/klipper/klippy/extras"
 MAINSAIL_DIR="${USER_HOME}/mainsail"
 
-# Klipper extras module (resonance avoidance)
+# Klipper extras module (symlink — repo stays clean for Moonraker)
 if [ -d "${KLIPPER_EXTRAS}" ]; then
-    cp "${SCRIPT_DIR}/klipper/resonance_avoidance.py" "${KLIPPER_EXTRAS}/resonance_avoidance.py"
-    [ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${KLIPPER_EXTRAS}/resonance_avoidance.py" 2>/dev/null
-    echo "  Klipper module installed"
+    ln -sf "${SCRIPT_DIR}/klipper/resonance_avoidance.py" "${KLIPPER_EXTRAS}/resonance_avoidance.py"
+    echo "  Klipper module linked"
 fi
 
-# Sweep script
+# Sweep script (symlink)
 mkdir -p "${SCRIPTS_DIR}"
-cp "${SCRIPT_DIR}/scripts/acoustic_sweep.py" "${SCRIPTS_DIR}/acoustic_sweep.py"
-chmod +x "${SCRIPTS_DIR}/acoustic_sweep.py"
-[ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${SCRIPTS_DIR}/acoustic_sweep.py" 2>/dev/null
-echo "  Sweep script installed"
+ln -sf "${SCRIPT_DIR}/scripts/acoustic_sweep.py" "${SCRIPTS_DIR}/acoustic_sweep.py"
+echo "  Sweep script linked"
 
 # Macro config (don't overwrite user customizations on update)
 if [ ! -f "${CONFIG_DIR}/smartpad-anc.cfg" ]; then
@@ -55,11 +52,10 @@ else
     echo "  Config exists (not overwritten)"
 fi
 
-# Web viewer (always update)
+# Web viewer (symlink)
 if [ -d "${MAINSAIL_DIR}" ]; then
-    cp "${SCRIPT_DIR}/web/anc.html" "${MAINSAIL_DIR}/anc.html"
-    [ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${MAINSAIL_DIR}/anc.html" 2>/dev/null
-    echo "  Web viewer installed"
+    ln -sf "${SCRIPT_DIR}/web/anc.html" "${MAINSAIL_DIR}/anc.html"
+    echo "  Web viewer linked"
 fi
 
 # Moonraker update manager config
