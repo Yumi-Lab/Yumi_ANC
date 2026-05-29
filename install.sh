@@ -1,52 +1,86 @@
 #!/bin/bash
-## SmartPad-ANC — install/update script
-## Called by Moonraker update_manager after git pull
+## Yumi_ANC — Active Noise Canceling
+## Install/update script — compatible with:
+##   - Moonraker update_manager (live system)
+##   - GitHub Actions chroot build (armbian image builder)
+##   - Manual install (sudo ./install.sh)
 
+# Detect user and home directory
+REAL_USER="$USER"
+OWNER=""
+
+if [ -n "$SUDO_USER" ]; then
+    if [ "$SUDO_USER" = "runner" ]; then
+        # GitHub Actions / chroot build
+        USER_HOME="/home/pi"
+        OWNER="pi"
+    else
+        USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+        OWNER="$SUDO_USER"
+    fi
+else
+    USER_HOME=$(getent passwd "$USER" | cut -d: -f6)
+    OWNER="$USER"
+fi
+
+echo "Yumi_ANC install — user: ${OWNER}, home: ${USER_HOME}"
+
+# Directories
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-USER_HOME=$(eval echo ~"$(whoami)")
 CONFIG_DIR="${USER_HOME}/printer_data/config"
 SCRIPTS_DIR="${USER_HOME}/printer_data/scripts"
 KLIPPER_EXTRAS="${USER_HOME}/klipper/klippy/extras"
 MAINSAIL_DIR="${USER_HOME}/mainsail"
 
-echo "SmartPad-ANC: Installing/updating..."
+# Klipper extras module (resonance avoidance)
+if [ -d "${KLIPPER_EXTRAS}" ]; then
+    cp "${SCRIPT_DIR}/klipper/resonance_avoidance.py" "${KLIPPER_EXTRAS}/resonance_avoidance.py"
+    [ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${KLIPPER_EXTRAS}/resonance_avoidance.py" 2>/dev/null
+    echo "  Klipper module installed"
+fi
 
-# Copy Klipper extras module
-cp "${SCRIPT_DIR}/klipper/resonance_avoidance.py" "${KLIPPER_EXTRAS}/resonance_avoidance.py"
-echo "  Klipper module updated"
-
-# Copy sweep script
+# Sweep script
 mkdir -p "${SCRIPTS_DIR}"
 cp "${SCRIPT_DIR}/scripts/acoustic_sweep.py" "${SCRIPTS_DIR}/acoustic_sweep.py"
 chmod +x "${SCRIPTS_DIR}/acoustic_sweep.py"
-echo "  Sweep script updated"
+[ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${SCRIPTS_DIR}/acoustic_sweep.py" 2>/dev/null
+echo "  Sweep script installed"
 
-# Copy macro config (only if not exists — don't overwrite user customizations)
+# Macro config (don't overwrite user customizations on update)
 if [ ! -f "${CONFIG_DIR}/smartpad-anc.cfg" ]; then
     cp "${SCRIPT_DIR}/config/smartpad-anc.cfg" "${CONFIG_DIR}/smartpad-anc.cfg"
+    [ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${CONFIG_DIR}/smartpad-anc.cfg" 2>/dev/null
     echo "  Config installed (new)"
 else
     echo "  Config exists (not overwritten)"
 fi
 
-# Copy web viewer
-cp "${SCRIPT_DIR}/web/anc.html" "${MAINSAIL_DIR}/anc.html" 2>/dev/null
-echo "  Web viewer updated"
-
-# Add include to printer.cfg if needed
-if ! grep -q "smartpad-anc.cfg" "${CONFIG_DIR}/printer.cfg" 2>/dev/null; then
-    sed -i "1i [include smartpad-anc.cfg]" "${CONFIG_DIR}/printer.cfg"
-    echo "  Added [include smartpad-anc.cfg] to printer.cfg"
+# Web viewer (always update)
+if [ -d "${MAINSAIL_DIR}" ]; then
+    cp "${SCRIPT_DIR}/web/anc.html" "${MAINSAIL_DIR}/anc.html"
+    [ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${MAINSAIL_DIR}/anc.html" 2>/dev/null
+    echo "  Web viewer installed"
 fi
 
-# Add include to moonraker.conf if needed
-if ! grep -q "update_smartpad_anc" "${CONFIG_DIR}/moonraker.conf" 2>/dev/null; then
-    echo "" >> "${CONFIG_DIR}/moonraker.conf"
-    echo "[include update_smartpad_anc.cfg]" >> "${CONFIG_DIR}/moonraker.conf"
-    echo "  Added [include update_smartpad_anc.cfg] to moonraker.conf"
+# Moonraker update manager config
+cp "${SCRIPT_DIR}/config/update_smartpad_anc.cfg" "${CONFIG_DIR}/update_smartpad_anc.cfg" 2>/dev/null
+[ -n "$OWNER" ] && chown "${OWNER}:${OWNER}" "${CONFIG_DIR}/update_smartpad_anc.cfg" 2>/dev/null
+
+# Add [include smartpad-anc.cfg] to printer.cfg if needed
+if [ -f "${CONFIG_DIR}/printer.cfg" ]; then
+    if ! grep -q "smartpad-anc.cfg" "${CONFIG_DIR}/printer.cfg"; then
+        sed -i "1i [include smartpad-anc.cfg]" "${CONFIG_DIR}/printer.cfg"
+        echo "  Added [include smartpad-anc.cfg] to printer.cfg"
+    fi
 fi
 
-# Copy update manager config
-cp "${SCRIPT_DIR}/config/update_smartpad_anc.cfg" "${CONFIG_DIR}/update_smartpad_anc.cfg"
+# Add [include update_smartpad_anc.cfg] to moonraker.conf if needed
+if [ -f "${CONFIG_DIR}/moonraker.conf" ]; then
+    if ! grep -q "update_smartpad_anc" "${CONFIG_DIR}/moonraker.conf"; then
+        echo "" >> "${CONFIG_DIR}/moonraker.conf"
+        echo "[include update_smartpad_anc.cfg]" >> "${CONFIG_DIR}/moonraker.conf"
+        echo "  Added [include update_smartpad_anc.cfg] to moonraker.conf"
+    fi
+fi
 
-echo "SmartPad-ANC: Done."
+echo "Yumi_ANC: Done."
