@@ -231,10 +231,9 @@ def _read_live_db():
         import struct
         n = len(raw) // 2
         samples = np.array(struct.unpack('<%dh' % n, raw), dtype=np.float64)
-        samples -= np.mean(samples)
 
-        fft_vals = np.abs(np.fft.rfft(samples))
-        freqs = np.fft.rfftfreq(len(samples), 1.0 / SAMPLE_RATE)
+        # Use _compute_fft with A-weighting (same as final analysis)
+        fft_vals, freqs = _compute_fft(samples)
 
         # Spectral subtraction — remove fan frequencies
         fft_norm = fft_vals / len(samples)
