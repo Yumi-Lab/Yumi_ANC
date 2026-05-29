@@ -573,10 +573,13 @@ def _compute_fft(samples, a_weight=True):
 
 
 def _analyze_zones(measurements, max_zones=None):
-    """Find the N loudest resonance peaks.
+    """Find resonance peaks with double threshold (DeepSeek v2 recommendation).
 
-    Simple and predictable: find all peaks with prominence >= 3 dB,
-    sort by loudness, keep the top N. Auto-threshold = dB of the Nth peak.
+    1. Find all peaks with prominence >= 3 dB
+    2. Filter: keep only peaks with prominence >= 3 dB AND SNR >= 6 dB
+       (SNR = peak dB vs median of 10 neighboring speeds)
+    3. Sort by loudness, keep top N
+    4. If fewer than 3 survive the filter, take top 3 anyway
 
     Args:
         measurements: list of dicts with delta_db
@@ -589,7 +592,7 @@ def _analyze_zones(measurements, max_zones=None):
 
     if len(deltas) < 3:
         print("  Not enough data points")
-        return []
+        return [], 0
 
     # Smooth to reduce noise
     if len(deltas) > 5:
@@ -603,32 +606,50 @@ def _analyze_zones(measurements, max_zones=None):
     if max_zones is None:
         max_zones = 3 if speed_range < 50 else 8
 
-    print(f"  Range: {np.min(deltas_smooth):.1f} to {np.max(deltas_smooth):.1f} dB")
-    print(f"  Looking for top {max_zones} loudest peaks")
+    print(f"  Range: {np.min(deltas_smooth):.1f} to {np.max(deltas_smooth):.1f} dBA")
+    print(f"  Max zones: {max_zones}")
 
-    # Find ALL peaks with minimum prominence (stand out from neighbors)
+    # Find ALL peaks with minimum prominence
     peaks, properties = find_peaks(
         deltas_smooth,
-        prominence=3.0,   # must stand out 3 dB from neighbors
+        prominence=3.0,
         distance=2
     )
 
     if len(peaks) == 0:
         print("  No peaks detected. Clean!")
-        return []
+        return [], 0
 
-    # Sort peaks by loudness (highest dB first), keep top N
+    # Build peak data with SNR (peak vs local neighbors)
     peak_data = []
     for i, idx in enumerate(peaks):
+        # SNR: compare peak to median of 10 neighboring points
+        lo = max(0, idx - 5)
+        hi = min(len(deltas_smooth), idx + 6)
+        neighbors = np.concatenate([deltas_smooth[lo:idx], deltas_smooth[idx+1:hi]])
+        local_median = float(np.median(neighbors)) if len(neighbors) > 0 else 0
+        snr = float(deltas_smooth[idx]) - local_median
+
         peak_data.append({
             "idx": idx,
             "speed": int(speeds[idx]),
             "db": float(deltas_smooth[idx]),
-            "prominence": float(properties['prominences'][i])
+            "prominence": float(properties['prominences'][i]),
+            "snr": round(snr, 1)
         })
 
-    peak_data.sort(key=lambda p: -p["db"])
-    top_peaks = peak_data[:max_zones]
+    # Double threshold: prominence >= 3 dB AND SNR >= 6 dB
+    filtered = [p for p in peak_data if p["prominence"] >= 3.0 and p["snr"] >= 6.0]
+    print(f"  Peaks found: {len(peak_data)}, after filter (prom>=3 + SNR>=6): {len(filtered)}")
+
+    # If too few survive, take top 3 by loudness anyway
+    if len(filtered) < 3:
+        filtered = sorted(peak_data, key=lambda p: -p["db"])[:3]
+        print(f"  Filter too strict, fallback to top 3")
+
+    # Sort by loudness, keep top N
+    filtered.sort(key=lambda p: -p["db"])
+    top_peaks = filtered[:max_zones]
 
     # Auto threshold = dB of the weakest kept peak
     auto_threshold = top_peaks[-1]["db"] if top_peaks else 0

@@ -218,7 +218,7 @@ class ResonanceAvoidance:
         clamped = False
 
         # Check X component
-        if x_ratio > 0.1 and self.intervals_x:
+        if x_ratio > 0.3 and self.intervals_x:
             x_speed = cruise_v * x_ratio
             x_safe = self._clamp_axis_speed(x_speed, self.intervals_x)
             if x_safe != x_speed:
@@ -227,7 +227,7 @@ class ResonanceAvoidance:
                 clamped = True
 
         # Check Y component
-        if y_ratio > 0.1 and self.intervals_y:
+        if y_ratio > 0.3 and self.intervals_y:
             y_speed = cruise_v * y_ratio
             y_safe = self._clamp_axis_speed(y_speed, self.intervals_y)
             if y_safe != y_speed:
@@ -235,7 +235,7 @@ class ResonanceAvoidance:
                 clamped = True
 
         # Check Z component
-        if z_ratio > 0.1 and self.intervals_z:
+        if z_ratio > 0.3 and self.intervals_z:
             z_speed = cruise_v * z_ratio
             z_safe = self._clamp_axis_speed(z_speed, self.intervals_z)
             if z_safe != z_speed:
@@ -245,7 +245,10 @@ class ResonanceAvoidance:
         if clamped:
             self.moves_clamped += 1
             new_cruise_v = max(1.0, new_cruise_v)
-            move.max_cruise_v2 = new_cruise_v * new_cruise_v
+            new_v2 = new_cruise_v * new_cruise_v
+            move.max_cruise_v2 = new_v2
+            # Also limit start velocity (short moves may never reach cruise)
+            move.max_start_v2 = min(move.max_start_v2, new_v2)
 
         return self._orig_check_move(move)
 
