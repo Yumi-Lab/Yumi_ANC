@@ -179,7 +179,7 @@ canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
         </div>
     </div>
 
-    <div class="card" id="cardD" style="margin-bottom:15px;display:none">
+    <div class="card" id="cardD" style="margin-bottom:15px">
         <div class="card-title">
             XY Diagonal — Resonance Map (experimental)
             <span class="badge" id="badgeD">—</span>
@@ -660,13 +660,7 @@ function render() {
     drawChart('chartX', data.x || [], 'X', margin);
     drawChart('chartY', data.y || [], 'Y', margin);
     drawChart('chartZ', data.z || [], 'Z', marginZ);
-    const cardD = document.getElementById('cardD');
-    if (data.d && data.d.length) {
-        cardD.style.display = 'block';
-        drawChart('chartD', data.d, 'D', margin);
-    } else {
-        cardD.style.display = 'none';
-    }
+    drawChart('chartD', data.d || [], 'D', margin);
     buildTable('tableX', data.x || []);
     buildTable('tableY', data.y || []);
     buildConfig();
