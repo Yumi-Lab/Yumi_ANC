@@ -429,7 +429,7 @@ def cmd_stop(_args):
     wav_file.close()
 
     # Split by axis
-    by_axis = {'x': [], 'y': [], 'z': []}
+    by_axis = {'x': [], 'y': [], 'z': [], 'd': []}
     for m in measurements:
         by_axis[m.get('axis', 'x')].append(m)
 
@@ -446,7 +446,7 @@ def cmd_stop(_args):
     # Analyze and generate zones per axis
     first_axis = True
     auto_thresholds = {}
-    for axis in ['x', 'y', 'z']:
+    for axis in ['x', 'y', 'z', 'd']:
         if by_axis[axis]:
             print(f"\n=== {axis.upper()} axis ===")
             zones, auto_th = _analyze_zones(by_axis[axis])
@@ -460,7 +460,7 @@ def cmd_stop(_args):
         "bins": 64,
         "auto_threshold": auto_thresholds
     }
-    for axis in ['x', 'y', 'z']:
+    for axis in ['x', 'y', 'z', 'd']:
         if by_axis[axis]:
             web_data[axis] = [{
                 "speed": m["speed_mm_s"],
@@ -698,7 +698,7 @@ def cmd_analyze(_args):
         print(f"No data at {RAW_CSV}")
         sys.exit(1)
 
-    by_axis = {'x': [], 'y': [], 'z': []}
+    by_axis = {'x': [], 'y': [], 'z': [], 'd': []}
     with open(RAW_CSV, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -711,7 +711,7 @@ def cmd_analyze(_args):
             by_axis[m["axis"]].append(m)
 
     first = True
-    for axis in ['x', 'y', 'z']:
+    for axis in ['x', 'y', 'z', 'd']:
         if by_axis[axis]:
             print(f"=== {axis.upper()} ===")
             zones, _ = _analyze_zones(by_axis[axis])
@@ -730,7 +730,7 @@ def cmd_save(args):
 
     margin_xy = 5
     margin_z = 1
-    zones = {'x': '', 'y': '', 'z': ''}
+    zones = {'x': '', 'y': '', 'z': '', 'd': ''}
 
     # First part: margin_xy margin_z zones_x
     first = parts[0].strip().split()
@@ -759,12 +759,12 @@ def cmd_save(args):
         f.write("enabled: True\n")
         f.write(f"avoidance_margin: {margin_xy}\n")
         f.write(f"avoidance_margin_z: {margin_z}\n")
-        for axis in ['x', 'y', 'z']:
+        for axis in ['x', 'y', 'z', 'd']:
             f.write(f"avoidance_zones_{axis}: {zones[axis]}\n")
 
     print(f"Config saved to {ZONES_CFG}")
     print(f"  Margin XY=±{margin_xy} Z=±{margin_z}")
-    for axis in ['x', 'y', 'z']:
+    for axis in ['x', 'y', 'z', 'd']:
         if zones[axis]:
             print(f"  {axis.upper()}: {zones[axis]}")
 

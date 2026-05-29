@@ -179,6 +179,21 @@ canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
         </div>
     </div>
 
+    <div class="card" id="cardD" style="margin-bottom:15px;display:none">
+        <div class="card-title">
+            XY Diagonal — Resonance Map (experimental)
+            <span class="badge" id="badgeD">—</span>
+        </div>
+        <canvas id="chartD"></canvas>
+        <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#c9d1d9"></div> Total</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#f0883e"></div> Low 50-200Hz</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Mid 200-500Hz</div>
+                <div class="legend-item"><div class="legend-dot" style="background:#a371f7"></div> High 500-2kHz</div>
+                <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Resonance</div>
+        </div>
+    </div>
+
     </div><!-- end view-spl -->
 
     <div class="view-panel" id="view-waterfall">
@@ -188,6 +203,7 @@ canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
                 <button class="btn" onclick="drawWaterfall('x')" style="padding:4px 12px;font-size:0.8em">X</button>
                 <button class="btn" onclick="drawWaterfall('y')" style="padding:4px 12px;font-size:0.8em">Y</button>
                 <button class="btn" onclick="drawWaterfall('z')" style="padding:4px 12px;font-size:0.8em">Z</button>
+                <button class="btn" onclick="drawWaterfall('d')" style="padding:4px 12px;font-size:0.8em">XY</button>
             </div>
             <canvas id="chartWaterfall" style="height:350px"></canvas>
             <div style="display:flex;justify-content:space-between;font-size:0.7em;color:var(--dim);margin-top:3px">
@@ -630,6 +646,13 @@ function render() {
     drawChart('chartX', data.x || [], 'X', margin);
     drawChart('chartY', data.y || [], 'Y', margin);
     drawChart('chartZ', data.z || [], 'Z', marginZ);
+    const cardD = document.getElementById('cardD');
+    if (data.d && data.d.length) {
+        cardD.style.display = 'block';
+        drawChart('chartD', data.d, 'D', margin);
+    } else {
+        cardD.style.display = 'none';
+    }
     buildTable('tableX', data.x || []);
     buildTable('tableY', data.y || []);
     buildConfig();
