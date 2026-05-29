@@ -690,7 +690,8 @@ function stopLiveRefresh() {
     if (liveInterval) {
         clearInterval(liveInterval);
         liveInterval = null;
-        setStatus('green', 'Calibration complete — ' + lastPointCount + ' points');
+        // Final reload — get the complete data with bands, spectrum, auto-threshold
+        setTimeout(() => loadData(), 2000);
     }
 }
 
@@ -745,7 +746,7 @@ async function stopCalibration() {
         document.getElementById('btnCalibrate').textContent = 'Start Calibration';
         document.getElementById('btnCalibrate').className = 'btn btn-primary';
         // Wait a bit then reload data
-        setTimeout(() => { loadData(); stopLiveRefresh(); stopLiveSpectrum(); }, 5000);
+        setTimeout(() => { stopLiveRefresh(); stopLiveSpectrum(); loadData(); }, 5000);
     } catch(e) {
         setStatus('red', 'Stop failed: ' + e.message);
     }
