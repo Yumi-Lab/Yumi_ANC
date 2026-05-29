@@ -51,10 +51,25 @@ echo "  Sweep script linked"
 ln -sf "${SCRIPT_DIR}/config/smartpad-anc.cfg" "${CONFIG_DIR}/smartpad-anc.cfg"
 echo "  Config linked"
 
-# Web viewer (symlink)
+# Web viewer + Mainsail sidebar integration (symlinks)
 if [ -d "${MAINSAIL_DIR}" ]; then
+    # anc.html (standalone, loads anc_core.js) + native Mainsail panel.
     ln -sf "${SCRIPT_DIR}/web/anc.html" "${MAINSAIL_DIR}/anc.html"
-    echo "  Web viewer linked"
+    ln -sf "${SCRIPT_DIR}/web/anc_core.js" "${MAINSAIL_DIR}/anc_core.js"
+    ln -sf "${SCRIPT_DIR}/web/anc_native.js" "${MAINSAIL_DIR}/anc_native.js"
+    echo "  Web viewer + native panel linked"
+
+    # Drop the old iframe inject if upgrading from it.
+    rm -f "${MAINSAIL_DIR}/anc_inject.js"
+
+    INDEX="${MAINSAIL_DIR}/index.html"
+    if [ -f "${INDEX}" ]; then
+        sed -i '/anc_inject.js/d' "${INDEX}"   # remove stale iframe tag
+        if ! grep -q 'anc_native.js' "${INDEX}"; then
+            sed -i 's|</body>|    <script src="/anc_native.js"></script>\n</body>|' "${INDEX}"
+            echo "  Patched index.html with ANC native <script> tag"
+        fi
+    fi
 fi
 
 # Moonraker update manager config
