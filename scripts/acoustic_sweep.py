@@ -582,7 +582,7 @@ def _compute_fft(samples, a_weight=True):
     return fft_vals, freqs
 
 
-def _analyze_zones(measurements, threshold_dba=21.0, max_zones=None):
+def _analyze_zones(measurements, threshold_dba=10.0, max_zones=None):
     """Find resonance zones using a fixed dBA threshold.
 
     Simple and universal: everything above +threshold_dba above baseline
