@@ -275,7 +275,7 @@ function toggleChartType() {
 function updateControls() {
     threshold = parseFloat(document.getElementById('sliderThreshold').value);
     margin = parseInt(document.getElementById('sliderMargin').value);
-    document.getElementById('valThreshold').textContent = '+' + threshold.toFixed(1) + ' dBAA';
+    document.getElementById('valThreshold').textContent = '+' + threshold.toFixed(1) + ' dBA';
     document.getElementById('valMargin').textContent = '±' + margin;
     marginZ = parseFloat(document.getElementById('sliderMarginZ').value);
     document.getElementById('valMarginZ').textContent = '±' + marginZ.toFixed(1);
@@ -332,7 +332,7 @@ function findZones(arr) {
         return v != null && v > thresh;
     }).map(d => {
         const v = d.db != null ? d.db : d.energy || 0;
-        return { speed: d.speed, value: v, ratio: isDb ? v.toFixed(1) + ' dBAA' : (v / med).toFixed(1) + 'x' };
+        return { speed: d.speed, value: v, ratio: isDb ? v.toFixed(1) + ' dBA' : (v / med).toFixed(1) + 'x' };
     });
     return { zones, median: med, threshold: thresh, maxE: Math.max(...vals), isDb };
 }
@@ -415,7 +415,7 @@ function drawChart(id, arr, axis, axisMargin) {
         ctx.fillStyle = 'rgba(248,81,73,0.6)';
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'right';
-        ctx.fillText('+' + threshold.toFixed(1) + ' dBAA', W - pad.r - 2, threshY - 3);
+        ctx.fillText('+' + threshold.toFixed(1) + ' dBA', W - pad.r - 2, threshY - 3);
     }
 
     // 4-curve rendering: low (orange), mid (blue), high (purple), total (white)
@@ -528,7 +528,7 @@ function drawChart(id, arr, axis, axisMargin) {
     const ySteps = 5;
     for (let i = 0; i <= ySteps; i++) {
         const v = yMin + (yMax - yMin) * i / ySteps;
-        const label = isDb ? (v >= 0 ? '+' : '') + v.toFixed(0) + ' dBAA' :
+        const label = isDb ? (v >= 0 ? '+' : '') + v.toFixed(0) + ' dBA' :
                       v > 1000 ? (v/1000).toFixed(0) + 'k' : v.toFixed(0);
         ctx.fillText(label, pad.l - 4, y(v) + 3);
     }
@@ -889,7 +889,7 @@ function drawLiveSpectrum(specData) {
             tip.style.display = 'block';
             tip.style.left = (ev.clientX + 10) + 'px';
             tip.style.top = (ev.clientY - 30) + 'px';
-            tip.innerHTML = `<b>${freq} Hz</b> (${band})<br>${db > -100 ? db.toFixed(1) + ' dBAA' : 'noise floor'}`;
+            tip.innerHTML = `<b>${freq} Hz</b> (${band})<br>${db > -100 ? db.toFixed(1) + ' dBA' : 'noise floor'}`;
         }
     };
     canvas_ref.onmouseleave = () => { document.getElementById('tooltip').style.display = 'none'; };
@@ -971,7 +971,7 @@ function resetToAuto() {
     document.getElementById('sliderMarginZ').value = marginZ;
     document.getElementById('valMarginZ').textContent = '±' + marginZ.toFixed(1);
     render();
-    setStatus('green', 'Reset to auto values — threshold: +' + threshold.toFixed(1) + ' dBAA');
+    setStatus('green', 'Reset to auto values — threshold: +' + threshold.toFixed(1) + ' dBA');
 }
 
 // === APPLY TO KLIPPER (live, no restart) ===
@@ -1213,7 +1213,7 @@ function drawScopeStored() {
     document.getElementById('scopeSpeedLabel').textContent =
         scopeAxis.toUpperCase() + ' ' + d.speed + ' mm/s';
     document.getElementById('scopeInfo').textContent =
-        'Total: ' + (d.db >= 0 ? '+' : '') + (d.db || 0).toFixed(1) + ' dBAA' +
+        'Total: ' + (d.db >= 0 ? '+' : '') + (d.db || 0).toFixed(1) + ' dBA' +
         (d.low != null ? '  L:' + d.low.toFixed(1) + '  M:' + d.mid.toFixed(1) + '  H:' + d.high.toFixed(1) : '');
 
     if (!bins.length) {
@@ -1295,7 +1295,7 @@ function drawScopeStored() {
     ctx.textAlign = 'right';
     for (let i = 0; i <= 4; i++) {
         const db = minDb + range * i / 4;
-        ctx.fillText(db.toFixed(0) + ' dBAA', pad.l - 4, H - pad.b - (i/4) * (H - pad.t - pad.b) + 3);
+        ctx.fillText(db.toFixed(0) + ' dBA', pad.l - 4, H - pad.b - (i/4) * (H - pad.t - pad.b) + 3);
     }
 
     // Hover
@@ -1310,7 +1310,7 @@ function drawScopeStored() {
             tip.style.display = 'block';
             tip.style.left = (ev.clientX + 10) + 'px';
             tip.style.top = (ev.clientY - 30) + 'px';
-            tip.innerHTML = `<b>${freq} Hz</b><br>${db > -100 ? db.toFixed(1) + ' dBAA' : 'below noise floor'}`;
+            tip.innerHTML = `<b>${freq} Hz</b><br>${db > -100 ? db.toFixed(1) + ' dBA' : 'below noise floor'}`;
         }
     };
     canvas.onmouseleave = () => { document.getElementById('tooltip').style.display = 'none'; };
