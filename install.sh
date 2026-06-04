@@ -84,9 +84,19 @@ if [ -f "${CONFIG_DIR}/printer.cfg" ]; then
     fi
 fi
 
-# Add [include update_smartpad_anc.cfg] to moonraker.conf if needed
+# Add [include update_smartpad_anc.cfg] to moonraker.conf if needed.
+# Guard against BOTH our include line AND a pre-existing raw
+# [update_manager Yumi_ANC] block (this is how the repo is first registered
+# with Moonraker on a live pad). Adding our include on top of an existing
+# section would create a duplicate [update_manager Yumi_ANC] -> Moonraker
+# refuses to start its config -> Mainsail can no longer reach it.
 if [ -f "${CONFIG_DIR}/moonraker.conf" ]; then
-    if ! grep -q "update_smartpad_anc" "${CONFIG_DIR}/moonraker.conf"; then
+    if grep -q "update_smartpad_anc" "${CONFIG_DIR}/moonraker.conf"; then
+        echo "  moonraker.conf already includes update_smartpad_anc.cfg"
+    elif grep -Eq '^\[update_manager[[:space:]]+Yumi_ANC\]' "${CONFIG_DIR}/moonraker.conf"; then
+        # A raw block already manages Yumi_ANC: do NOT add the include (would dupe).
+        echo "  moonraker.conf already has a [update_manager Yumi_ANC] block, leaving it"
+    else
         echo "" >> "${CONFIG_DIR}/moonraker.conf"
         echo "[include update_smartpad_anc.cfg]" >> "${CONFIG_DIR}/moonraker.conf"
         echo "  Added [include update_smartpad_anc.cfg] to moonraker.conf"
