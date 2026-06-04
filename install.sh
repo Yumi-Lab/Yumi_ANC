@@ -32,6 +32,45 @@ SCRIPTS_DIR="${USER_HOME}/printer_data/scripts"
 KLIPPER_EXTRAS="${USER_HOME}/klipper/klippy/extras"
 MAINSAIL_DIR="${USER_HOME}/mainsail"
 
+# --- Audio runtime deps (mic-based sweep) ---------------------------------
+# acoustic_sweep.py runs under the SYSTEM python3 (via gcode_shell_command) and
+# needs `sounddevice` + `scipy`. On Debian Trixie there is NO python3-sounddevice
+# apt package, so it MUST come from pip; only libportaudio2 / scipy / alsa-utils
+# live in apt. Without this the sweep aborts with ModuleNotFoundError and the
+# calibration silently produces no data. install.sh (live OTA path) is the only
+# place that runs on an existing pad, so the deps are ensured here, idempotently.
+ensure_audio_deps() {
+    # become-root helper (root in chroot/YUMI_SYNC, sudo for manual installs)
+    local SUDO=""
+    if [ "$(id -u)" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; else
+            echo "  [audio] not root and no sudo — skipping apt libs"
+        fi
+    fi
+
+    # apt system libs (these DO exist in apt)
+    if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]; then
+        if $SUDO apt-get install -y --no-install-recommends \
+               libportaudio2 python3-scipy alsa-utils >/dev/null 2>&1; then
+            echo "  [audio] apt libs ok (libportaudio2, scipy, alsa-utils)"
+        else
+            echo "  [audio] WARNING: apt install of audio libs failed"
+        fi
+    fi
+
+    # sounddevice via pip into system python3 (not in apt on Trixie)
+    if python3 -c "import sounddevice" >/dev/null 2>&1; then
+        echo "  [audio] sounddevice already importable"
+    elif $SUDO python3 -m pip install --break-system-packages sounddevice >/dev/null 2>&1; then
+        echo "  [audio] sounddevice installed via pip"
+    elif $SUDO python3 -m pip install sounddevice >/dev/null 2>&1; then
+        echo "  [audio] sounddevice installed via pip (legacy pip)"
+    else
+        echo "  [audio] WARNING: could not install sounddevice — calibration will not record"
+    fi
+}
+ensure_audio_deps
+
 # Klipper extras module (symlink — repo stays clean for Moonraker)
 if [ -d "${KLIPPER_EXTRAS}" ]; then
     ln -sf "${SCRIPT_DIR}/klipper/resonance_avoidance.py" "${KLIPPER_EXTRAS}/resonance_avoidance.py"
