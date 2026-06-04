@@ -51,11 +51,24 @@ function setStatus(color, text) {
 }
 
 async function sendGcode(cmd) {
-    await fetch('/printer/gcode/script', {
+    const resp = await fetch('/printer/gcode/script', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ script: cmd })
     });
+    // fetch() does NOT reject on HTTP 4xx/5xx. Moonraker answers 400 with
+    // {"error":{"message":"..."}} when the macro is unknown or the printer is
+    // not ready. Without this check the UI would flip to "calibrating" while
+    // the printer does nothing — surface the real reason instead.
+    if (!resp.ok) {
+        let msg = 'HTTP ' + resp.status;
+        try {
+            const body = await resp.json();
+            if (body && body.error && body.error.message) msg = body.error.message;
+        } catch (e) { /* non-JSON error body */ }
+        throw new Error(msg);
+    }
+    return resp;
 }
 
 let useAutoZones = true; // true = use algo-detected zones, false = use slider threshold
