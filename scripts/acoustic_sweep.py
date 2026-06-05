@@ -357,6 +357,8 @@ def cmd_stop(_args):
     baseline_fft, baseline_freqs = _compute_fft(baseline_samples)
     # Normalize baseline FFT to per-sample basis for matching different segment lengths
     baseline_fft_norm = baseline_fft / len(baseline_samples)
+    # Baseline resampled onto the common grid, for bin-aligned spectral subtraction.
+    baseline_grid = np.interp(COMMON_FREQS, baseline_freqs, baseline_fft_norm)
     mask_bl = (baseline_freqs >= BANDPASS_LOW) & (baseline_freqs <= BANDPASS_HIGH)
     baseline_energy = float(np.sqrt(np.mean(baseline_fft[mask_bl] ** 2)))
     print(f"Baseline energy: {baseline_energy:.0f} (fans + ambient)")
@@ -397,14 +399,6 @@ def cmd_stop(_args):
         n = len(raw) // 2
         segment = np.array(struct.unpack('<%dh' % n, raw), dtype=np.float64)
 
-        fft_vals, freqs = _compute_fft(segment)
-
-        # Spectral subtraction: remove fan/ambient frequencies bin by bin
-        fft_norm = fft_vals / len(segment)
-        min_len = min(len(fft_norm), len(baseline_fft_norm))
-        cleaned = np.maximum(fft_norm[:min_len] - baseline_fft_norm[:min_len], 0)
-        f = freqs[:min(len(freqs), min_len)]
-
         # 3-band analysis + total
         bands = {
             "low":   (50, 200),    # chassis, frame, bed
@@ -412,19 +406,18 @@ def cmd_stop(_args):
             "high":  (500, 2000),  # rails, bearings, stepper
             "total": (50, 2000),   # combined energy for detection
         }
-        band_db = {}
-        for band_name, (flo, fhi) in bands.items():
-            mask = (f >= flo) & (f <= fhi)
-            if np.any(mask):
-                e = float(np.sqrt(np.mean(cleaned[mask] ** 2)))
-                band_db[band_name] = round(20.0 * np.log10(e) if e > 1e-10 else -100, 1)
-            else:
-                band_db[band_name] = -100.0
 
-        # Downsample spectrum to 64 bins (0-2kHz) for waterfall/spectrogram
-        max_freq = min(2000, SAMPLE_RATE / 2)
-        freq_mask = f <= max_freq
-        spec = cleaned[freq_mask]
+        # Robust to a spoken word / the spike at each direction change: median
+        # band energy over 0.25 s sub-windows instead of one FFT over the pass.
+        energies, median_spec = _robust_band_energy(segment, baseline_grid, bands)
+        band_db = {
+            name: round(20.0 * np.log10(e) if e > 1e-10 else -100, 1)
+            for name, e in energies.items()
+        }
+
+        # Downsample the robust (low-percentile) cleaned spectrum (on
+        # COMMON_FREQS, 50-2000 Hz) to 64 bins for the waterfall/spectrogram.
+        spec = median_spec
         n_bins = 64
         bin_size = max(1, len(spec) // n_bins)
         spectrum = []
@@ -598,6 +591,65 @@ def _compute_fft(samples, a_weight=True):
         a_linear = 10.0 ** (a_db / 20.0)
         fft_vals = fft_vals * a_linear
     return fft_vals, freqs
+
+
+# Fixed frequency grid: baseline and every (sub)window are compared bin-aligned
+# by FREQUENCY. The previous code subtracted the baseline by bin INDEX, but
+# baseline (3 s) and segment (≤2 s) have different lengths -> different Hz/bin,
+# so index i was a different frequency in each -> misaligned subtraction.
+COMMON_FREQS = np.arange(50.0, 2001.0, 2.0)
+ROBUST_SUBWIN_S = 0.25   # sub-window length for transient/spike rejection
+# Percentile (not mean/median) of the per-sub-window band energy. The steady
+# cruise resonance is the *floor* present in every sub-window; a spoken word or
+# a direction-change spike only ADDS energy on top, in some windows. Taking a
+# low percentile reads that clean floor and ignores the contaminated windows —
+# robust even when reversals are frequent (high speed) and hit ~half the windows.
+ROBUST_PERCENTILE = 25
+
+
+def _spectrum_on_grid(samples):
+    """A-weighted magnitude spectrum, resampled onto COMMON_FREQS and normalized
+    per-sample so windows of different length stay comparable."""
+    fv, fr = _compute_fft(samples)
+    return np.interp(COMMON_FREQS, fr, fv / len(samples))
+
+
+def _robust_band_energy(segment, baseline_grid, bands, sample_rate=SAMPLE_RATE):
+    """Per-band energy that is robust to transients — a spoken word, or the
+    acoustic spike at every direction change (backlash/belt/jerk).
+
+    A single FFT over the whole 2 s pass *averages* such a spike in instead of
+    rejecting it, and at high speed the window holds several reversals. Here we
+    split the pass into overlapping 0.25 s sub-windows, remove the baseline on a
+    common frequency grid, and take the MEDIAN band energy across sub-windows.
+    A spike that lives in only a few sub-windows cannot move the median, while a
+    real resonance (present the whole pass) survives untouched.
+
+    Returns (dict band->energy, median cleaned spectrum on COMMON_FREQS).
+    """
+    sub_n = int(ROBUST_SUBWIN_S * sample_rate)
+    hop = max(1, sub_n // 2)
+    if len(segment) >= sub_n * 2:
+        windows = [segment[s:s + sub_n]
+                   for s in range(0, len(segment) - sub_n + 1, hop)]
+    else:
+        windows = [segment]   # too short to sub-window — use the whole pass
+
+    cleaned_stack = np.array([
+        np.maximum(_spectrum_on_grid(w) - baseline_grid, 0.0) for w in windows
+    ])  # (n_windows, n_freq)
+
+    # Representative spectrum = the low-percentile (clean cruise) envelope.
+    repr_spectrum = np.percentile(cleaned_stack, ROBUST_PERCENTILE, axis=0)
+    energies = {}
+    for name, (flo, fhi) in bands.items():
+        mask = (COMMON_FREQS >= flo) & (COMMON_FREQS <= fhi)
+        if not np.any(mask):
+            energies[name] = 0.0
+            continue
+        per_window = np.sqrt(np.mean(cleaned_stack[:, mask] ** 2, axis=1))
+        energies[name] = float(np.percentile(per_window, ROBUST_PERCENTILE))
+    return energies, repr_spectrum
 
 
 def _analyze_zones(measurements, threshold_dba=10.0, max_zones=None):
