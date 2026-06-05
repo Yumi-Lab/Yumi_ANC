@@ -86,7 +86,7 @@
         </div>
         <div class="control-group" style="margin-left:auto">
             <button class="btn" onclick="resetToAuto()" style="padding:6px 12px;font-size:0.85em">Auto</button>
-            <button class="btn btn-primary" onclick="applyToKlipper()" style="padding:6px 14px;font-size:0.85em">Apply to Klipper</button>
+            <button class="btn btn-primary" id="btnApply" onclick="applyToKlipper()" style="padding:6px 14px;font-size:0.85em">Apply to Klipper</button>
         </div>
     </div>
 
@@ -301,7 +301,7 @@
     #anc-native-root .status-dot.red { background: var(--red); }
     #anc-native-root .status-dot.orange { background: var(--orange); animation: anc-native-pulse 1s infinite; }
     @keyframes anc-native-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-    #anc-native-root .tooltip { position: absolute; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 0.8em; pointer-events: none; z-index: 100; }
+    #anc-native-root .tooltip { position: fixed; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 0.8em; pointer-events: none; z-index: 100; }
     #anc-native-root .legend { display: flex; gap: 15px; font-size: 0.75em; color: var(--dim); margin-top: 5px; }
     #anc-native-root .legend-item { display: flex; align-items: center; gap: 4px; }
     #anc-native-root .legend-dot { width: 8px; height: 8px; border-radius: 2px; }

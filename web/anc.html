@@ -53,7 +53,7 @@ canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
 .status-dot.red { background: var(--red); }
 .status-dot.orange { background: var(--orange); animation: pulse 1s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.tooltip { position: absolute; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 0.8em; pointer-events: none; z-index: 100; }
+.tooltip { position: fixed; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; font-size: 0.8em; pointer-events: none; z-index: 100; }
 .legend { display: flex; gap: 15px; font-size: 0.75em; color: var(--dim); margin-top: 5px; }
 .legend-item { display: flex; align-items: center; gap: 4px; }
 .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
@@ -119,7 +119,7 @@ canvas { width: 100%; height: 220px; display: block; cursor: crosshair; }
         </div>
         <div class="control-group" style="margin-left:auto">
             <button class="btn" onclick="resetToAuto()" style="padding:6px 12px;font-size:0.85em">Auto</button>
-            <button class="btn btn-primary" onclick="applyToKlipper()" style="padding:6px 14px;font-size:0.85em">Apply to Klipper</button>
+            <button class="btn btn-primary" id="btnApply" onclick="applyToKlipper()" style="padding:6px 14px;font-size:0.85em">Apply to Klipper</button>
         </div>
     </div>
 

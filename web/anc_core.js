@@ -775,6 +775,20 @@ function resetToAuto() {
 
 // === APPLY TO KLIPPER (live, no restart) ===
 async function applyToKlipper() {
+    // Feedback ON the button itself — the status bar is at the top of a long
+    // page, so when you click "Apply" further down you never see it change.
+    const btn = document.getElementById('btnApply');
+    const original = btn ? btn.textContent : null;
+    const setBtn = (txt, bg) => {
+        if (!btn) return;
+        btn.textContent = txt;
+        btn.style.background = bg || '';
+        btn.style.borderColor = bg || '';
+    };
+    if (btn) btn.disabled = true;
+    setBtn('Applying…', '#d29922');           // orange = in progress
+    setStatus('orange', 'Applying to Klipper…');
+
     // Recalculate zones with current threshold from slider
     const zones = {};
     ['x', 'y', 'z'].forEach(axis => {
@@ -808,8 +822,13 @@ async function applyToKlipper() {
         );
 
         setStatus('green', 'Applied + saved! Active now, persists after restart.');
+        setBtn('✓ Applied & saved', '#2ea043');   // green
     } catch(e) {
         setStatus('red', 'Failed to apply: ' + e.message);
+        setBtn('✗ Failed — ' + e.message, '#da3633');  // red
+    } finally {
+        // Restore the button to its idle label after the confirmation shows.
+        if (btn) setTimeout(() => { btn.disabled = false; setBtn(original || 'Apply to Klipper', ''); }, 3500);
     }
 }
 
