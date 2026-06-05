@@ -485,18 +485,44 @@
   // re-injects it whenever it's gone — purely runtime, it never touches any
   // Mainsail file. Debounced so a burst of mutations triggers one cheap check.
   let _injectObserver = null, _checkPending = false;
-  function ensureInjected() {
+
+  // Is Mainsail showing its OWN main content? showAnc() hides main/.v-main, so
+  // while our panel is up they have offsetParent === null. If one becomes
+  // visible again, Mainsail re-rendered its view underneath us.
+  function mainsailContentVisible() {
+    return [...document.querySelectorAll('main, .v-main, .v-main__wrap')]
+      .some(el => el.offsetParent !== null);
+  }
+
+  function reconcile() {
+    // 1) keep our sidebar entry alive
     const nav = document.querySelector('.v-navigation-drawer');
     if (nav && !nav.querySelector('a[href="#anc-native"]')) injectSidebar(nav);
+    // 2) if Mainsail re-rendered its own page while we were active, step aside
+    //    so its content can't show up half-overlapped in/around our overlay.
+    if (ancActive && mainsailContentVisible()) hideAnc(false);
   }
+
   function startInjectionGuard() {
     if (_injectObserver) return;
     _injectObserver = new MutationObserver(() => {
       if (_checkPending) return;
       _checkPending = true;
-      setTimeout(() => { _checkPending = false; ensureInjected(); }, 250);
+      setTimeout(() => { _checkPending = false; reconcile(); }, 250);
     });
     _injectObserver.observe(document.body, { childList: true, subtree: true });
+
+    // Hide the panel when the user navigates to any OTHER Mainsail menu entry.
+    // Delegated on document (capture) so it survives Vue re-creating the items —
+    // the old per-item listeners were lost on every re-render, which is why the
+    // panel stopped hiding when you clicked another section.
+    document.addEventListener('click', (e) => {
+      if (!ancActive) return;
+      const item = e.target.closest('.v-list-item');
+      if (!item) return;
+      if (item.matches('a[href="#anc-native"]') || item.closest('#anc-native-root')) return;
+      hideAnc(false);
+    }, true);
   }
 
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : init();
