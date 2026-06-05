@@ -104,10 +104,16 @@ if [ -d "${MAINSAIL_DIR}" ]; then
     INDEX="${MAINSAIL_DIR}/index.html"
     if [ -f "${INDEX}" ]; then
         sed -i '/anc_inject.js/d' "${INDEX}"   # remove stale iframe tag
-        if ! grep -q 'anc_native.js' "${INDEX}"; then
-            sed -i 's|</body>|    <script src="/anc_native.js"></script>\n</body>|' "${INDEX}"
-            echo "  Patched index.html with ANC native <script> tag"
-        fi
+        # Cache-busting: tag carries the repo's short commit. Rewriting it on
+        # every install (remove any prior anc_native.js tag first) means each
+        # update changes the URL, so browsers fetch the fresh panel instead of
+        # a stale cached copy — no manual refresh. anc_native.js propagates the
+        # same ?v= to anc_core.js. Only OUR injected line is touched; Mainsail's
+        # own bundle stays untouched.
+        ANC_VER="$(git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || echo dev)"
+        sed -i '/anc_native\.js/d' "${INDEX}"   # drop any previous (versioned) tag
+        sed -i "s|</body>|    <script src=\"/anc_native.js?v=${ANC_VER}\"></script>\n</body>|" "${INDEX}"
+        echo "  Patched index.html with ANC native <script> tag (v=${ANC_VER})"
     fi
 fi
 

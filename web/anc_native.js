@@ -349,13 +349,22 @@
     return root;
   }
 
+  // Cache-buster: propagate the ?v=<hash> from our own <script> tag (set by
+  // install.sh) so anc_core.js refreshes whenever the panel is updated, instead
+  // of the browser serving a stale cached copy. Falls back to no query.
+  function ancVersionQuery() {
+    const me = document.querySelector('script[src*="anc_native.js"]');
+    const m = me && me.src.match(/[?&]v=([^&]+)/);
+    return m ? ('?v=' + m[1]) : '';
+  }
+
   function loadCore() {
     if (coreLoaded) return;
     coreLoaded = true;
     // Load the logic ONCE, AFTER the markup exists so its init (loadData /
     // autoDetectLive, attached to the end of anc_core.js) finds its DOM.
     const s = document.createElement('script');
-    s.src = '/anc_core.js';
+    s.src = '/anc_core.js' + ancVersionQuery();
     s.async = false;
     document.body.appendChild(s);
   }
@@ -464,9 +473,30 @@
     try {
       const nav = await waitFor('.v-navigation-drawer', MAX_WAIT);
       await new Promise(r => setTimeout(r, 3000));
-      if (injectSidebar(nav)) console.log('[ANC-native] Injected');
+      if (injectSidebar(nav)) { console.log('[ANC-native] Injected'); startInjectionGuard(); }
       else { console.warn('[ANC-native] Retry...'); setTimeout(init, 3000); }
     } catch (e) { console.warn('[ANC-native]', e); setTimeout(init, 5000); }
+  }
+
+  // Mainsail is a Vue SPA: when it re-renders the navigation drawer (route
+  // change, websocket reconnect, resize, theme switch...), Vue's vDOM
+  // reconciliation removes our injected <a> because it doesn't know about it,
+  // and the panel "disappears" until a manual refresh. A persistent observer
+  // re-injects it whenever it's gone — purely runtime, it never touches any
+  // Mainsail file. Debounced so a burst of mutations triggers one cheap check.
+  let _injectObserver = null, _checkPending = false;
+  function ensureInjected() {
+    const nav = document.querySelector('.v-navigation-drawer');
+    if (nav && !nav.querySelector('a[href="#anc-native"]')) injectSidebar(nav);
+  }
+  function startInjectionGuard() {
+    if (_injectObserver) return;
+    _injectObserver = new MutationObserver(() => {
+      if (_checkPending) return;
+      _checkPending = true;
+      setTimeout(() => { _checkPending = false; ensureInjected(); }, 250);
+    });
+    _injectObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : init();
